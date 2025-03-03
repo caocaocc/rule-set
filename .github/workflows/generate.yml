@@ -1,0 +1,70 @@
+name: Generate
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 21 * * *"
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**/README.md"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./go.mod
+        
+      - name: Checkout v2fly/domain-list-community
+        uses: actions/checkout@v4
+        with:
+          repository: v2fly/domain-list-community
+          path: domain-list-community
+
+      - name: Get CDN domains
+        run: |
+          OUTPUT_FILE="./domain-list-community/data/cdn"
+          process_json() {
+              local url=$1
+              curl -s "$url" | jq -r '
+                  .rules[] | 
+                  (.domain[]? | "full:" + .), 
+                  (.domain_suffix[]?)
+              ' | grep -v "sukkaw"
+          }
+          {
+              process_json "https://ruleset.skk.moe/sing-box/domainset/cdn.json"
+              process_json "https://ruleset.skk.moe/sing-box/non_ip/cdn.json"
+          } > "$OUTPUT_FILE"
+          echo "CDN domains have been written to $OUTPUT_FILE" 
+
+      - name: Append attribute rules
+        run: |
+          echo "include:geolocation-!cn @cn" >> ./domain-list-community/data/cn
+          echo "include:geolocation-cn @!cn" >> ./domain-list-community/data/geolocation-\!cn
+
+      - name: Get dependencies and run
+        run: |
+          go run ./ --datapath=./domain-list-community/data
+
+      - name: Generate sha256 hashsum
+        run: |
+          cd publish || exit 1
+          sha256sum geosite.dat > geosite.dat.sha256sum
+
+      - name: Git push assets to "release" branch
+        run: |
+          cd publish || exit 1
+          git init
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b release
+          git add .
+          git commit -m "Update rule-set"
+          git remote add publish "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f publish release
