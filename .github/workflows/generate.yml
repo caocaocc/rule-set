@@ -47,6 +47,7 @@ jobs:
         run: |
           echo "include:geolocation-!cn @cn" >> ./domain-list-community/data/cn
           echo "include:geolocation-cn @!cn" >> ./domain-list-community/data/geolocation-\!cn
+          echo "splashtop.com" >> ./domain-list-community/data/cn
 
       - name: Get dependencies and run
         run: |
